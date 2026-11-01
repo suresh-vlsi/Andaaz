@@ -54,8 +54,14 @@ class TextOnly(HTMLParser):
         if not self.ignored_depth:
             self.parts.append(data)
 
-parser = argparse.ArgumentParser(description="చేతిరాత తెలుగు వంటకార్డును చదవండి")
+SUPPORTED_LANGUAGE_CODES = (
+    "as-IN", "bn-IN", "brx-IN", "doi-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN",
+    "kok-IN", "ks-IN", "mai-IN", "ml-IN", "mni-IN", "mr-IN", "ne-IN", "od-IN",
+    "pa-IN", "sa-IN", "sat-IN", "sd-IN", "ta-IN", "te-IN", "ur-IN",
+)
+parser = argparse.ArgumentParser(description="Read a handwritten recipe card")
 parser.add_argument("card", type=Path, help="PNG, JPG, JPEG లేదా PDF కార్డు ఫైల్")
+parser.add_argument("--language-code", default="te-IN", choices=SUPPORTED_LANGUAGE_CODES, help="Recipe language (default: te-IN)")
 args = parser.parse_args()
 if not args.card.is_file():
     raise SystemExit(f"కార్డు ఫైల్ కనిపించలేదు: {args.card}")
@@ -69,7 +75,7 @@ client = SarvamAI(api_subscription_key=api_key)
 with args.card.open("rb") as card_file:
     job = client.doc_ai.parse(
         file=[(args.card.name, card_file, mime_type)],
-        language="te-IN",
+        language=args.language_code,
         content_type="handwritten",
     )
 

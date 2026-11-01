@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -56,8 +57,14 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-parser = argparse.ArgumentParser(description="తెలుగు వంట ఆడియోను రెసిపీగా మార్చండి")
+SUPPORTED_LANGUAGE_CODES = (
+    "as-IN", "bn-IN", "brx-IN", "doi-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN",
+    "kok-IN", "ks-IN", "mai-IN", "ml-IN", "mni-IN", "mr-IN", "ne-IN", "od-IN",
+    "pa-IN", "sa-IN", "sat-IN", "sd-IN", "ta-IN", "te-IN", "ur-IN",
+)
+parser = argparse.ArgumentParser(description="Turn a spoken recipe into a structured recipe")
 parser.add_argument("audio", type=Path, help="వంట వివరణ ఉన్న ఆడియో ఫైల్")
+parser.add_argument("--language-code", default="te-IN", choices=SUPPORTED_LANGUAGE_CODES, help="Recipe language (default: te-IN)")
 args = parser.parse_args()
 if not args.audio.is_file():
     raise SystemExit(f"ఆడియో ఫైల్ కనిపించలేదు: {args.audio}")
@@ -67,49 +74,72 @@ with args.audio.open("rb") as audio_file:
     transcript = client.speech_to_text.transcribe(
         file=audio_file,
         model="saaras:v4",
-        language_code="te-IN",
+        language_code=args.language_code,
         mode="transcribe",
     ).transcript
+
+if args.language_code == "te-IN":
+    system_prompt = (
+        "మీరు తెలుగు కుటుంబ వంటకాల లేఖకులు. సమాధానంలోని వాక్యాలన్నీ తెలుగులో రాయండి. "
+        "మాటల్లోని పదార్థాలు, క్రమం, అసలు మోతాదులను కాపాడండి. confidence అంటే మోతాదు వినికిడి లేదా గ్రాముల మార్పిడి నమ్మకం. "
+        "1 కప్పు = 240 మి.లీ., పెద్ద చెంచా = 15 మి.లీ., చిన్న చెంచా = 5 మి.లీ. అని భావించి, "
+        "వంటకుడి పాత్రల కొలతలు నిర్ధారించలేదని measurement_assumptions లో చెప్పండి. నీటికి 1 మి.లీ. సుమారు 1 గ్రాము. "
+        "'కొంచెం', 'సరిపడా', 'రుచికి' వంటి అస్పష్ట మోతాదులకు గ్రాములు ఊహించవద్దు; null పెట్టండి. "
+        "confidence ఫీల్డుల్లో ఎక్కువ, మధ్యస్థం, తక్కువ మాత్రమే వాడండి. కొత్త పదార్థాలు లేదా దశలు చేర్చవద్దు."
+    )
+    user_prompt = f"ఈ తెలుగు వంట మాటలను రెసిపీగా క్రమబద్ధీకరించండి:\n\n{transcript}"
+else:
+    english_transcript = transcript
+    if args.language_code != "en-IN":
+        parts = textwrap.wrap(transcript, width=1800, break_long_words=False, break_on_hyphens=False) or [transcript]
+        english_transcript = " ".join(
+            client.text.translate(
+                input=part,
+                source_language_code=args.language_code,
+                target_language_code="en-IN",
+                model="sarvam-translate:v1",
+            ).translated_text
+            for part in parts
+        )
+    system_prompt = (
+        "Create a faithful family recipe from the English translation. Return recipe text in English. "
+        "Use the original transcript to copy original_amount phrases exactly where possible. Preserve ingredients "
+        "and step order; do not invent ingredients or steps. quantity_confidence means the amount was heard clearly; "
+        "conversion_confidence means how confidently it converts to grams. These are different. Assume 1 cup=240 ml, "
+        "tablespoon=15 ml, teaspoon=5 ml, and state these assumptions. Water is about 1 g/ml. Never invent grams for "
+        "vague amounts such as a little or to taste; use null and low conversion confidence. Ask only useful questions. "
+        "For confidence fields use only the schema values: ఎక్కువ, మధ్యస్థం, తక్కువ."
+    )
+    user_prompt = (
+        f"Original transcript ({args.language_code}; preserve original-language amount phrases):\n{transcript}\n\n"
+        f"English translation for understanding:\n{english_transcript}"
+    )
 
 result = client.chat.completions(
     model="sarvam-105b-conversations",
     messages=[
-        {
-            "role": "system",
-            "content": (
-                "మీరు తెలుగు కుటుంబ వంటకాల లేఖకులు. సమాధానంలోని అన్ని వాక్యాలు తెలుగులోనే రాయండి. "
-                "వంటకుడు చెప్పిన పదార్థాలు, క్రమం, అసలు మోతాదు మాటలను అలాగే కాపాడండి. "
-                "quantity_confidence అంటే మోతాదు మాటలను సరిగ్గా విన్నామా అన్న నమ్మకం; "
-                "conversion_confidence అంటే వాటిని గ్రాములుగా మార్చిన నమ్మకం. ఇవి వేర్వేరుగా నిర్ణయించండి. "
-                "అంచనాలకు స్పష్టమైన సాధారణ ప్రమాణాలు వాడండి: ఒక కప్పు = 240 మి.లీ., పెద్ద చెంచా = 15 మి.లీ., "
-                "చిన్న చెంచా = 5 మి.లీ. ఇవి వంటకుడి సొంత పాత్రల కొలతలు కావు కాబట్టి "
-                "measurement_assumptions లో పేర్కొనండి. నీటికి 1 మి.లీ. సుమారు 1 గ్రాము. "
-                "బియ్యం వంటి పదార్థాలకు గ్రాముల మార్పిడి మారవచ్చు; ఒక ఖచ్చితమైన సంఖ్యకు బదులు "
-                "సమంజసమైన పరిధి మాత్రమే ఇవ్వండి, మధ్యస్థం లేదా తక్కువ conversion_confidence ఇవ్వండి. "
-                "చెంచా చిన్నదా పెద్దదా తెలియకపోతే విస్తృత పరిధి ఇవ్వగలిగితే ఇవ్వండి, లేకపోతే గ్రాముల ఫీల్డులను null చేయండి. "
-                "'కొంచెం', 'సరిపడా', 'రుచికి' వంటి మాటలకు గ్రాముల సంఖ్య ఊహించవద్దు; null పెట్టి తక్కువ "
-                "conversion_confidence ఇవ్వండి. వాటిని quantity_confidence తక్కువగా పరిగణிக்க వద్దు, "
-                "మాట స్పష్టంగా వినిపిస్తే ఎక్కువ ఇవ్వండి. conversion_reason లో అంచనా లేదా null కారణాన్ని "
-                "తెలుగులో వివరించండి. అవసరమైన స్పష్టీకరణలనే questions_for_cook లో అడగండి; "
-                "రుచికి సరిపడా అన్నవాటికి ఖచ్చితమైన గ్రాములు అడగవద్దు. కొత్త పదార్థాలు లేదా దశలు చేర్చవద్దు."
-            ),
-        },
-        {"role": "user", "content": f"ఈ తెలుగు వంట మాటలను రెసిపీగా క్రమబద్ధీకరించండి:\n\n{transcript}"},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ],
     response_format={
         "type": "json_schema",
-        "json_schema": {"name": "telugu_recipe", "strict": True, "schema": SCHEMA},
+        "json_schema": {"name": "family_recipe", "strict": True, "schema": SCHEMA},
     },
 )
-
 recipe = json.loads(result.choices[0].message.content)
 
 # Keep the recognized words visible so the family can audit the recipe fields.
 recipe = {"spoken_transcript": transcript, **recipe}
-recipe["measurement_assumptions"] = [
-    "ఈ స్క్రిప్ట్ అంచనా ప్రమాణాలు: 1 కప్పు = 240 మి.లీ., పెద్ద చెంచా = 15 మి.లీ., చిన్న చెంచా = 5 మి.లీ.",
-    "వంటకుడి సొంత కప్పు లేదా చెంచా ఈ ప్రమాణాలతో సమానమని నిర్ధారించలేదు.",
-]
+if args.language_code == "te-IN":
+    recipe["measurement_assumptions"] = [
+        "అంచనా ప్రమాణాలు: 1 కప్పు = 240 మి.లీ., పెద్ద చెంచా = 15 మి.లీ., చిన్న చెంచా = 5 మి.లీ.",
+        "వంటకుడి సొంత కప్పు లేదా చెంచా ఈ ప్రమాణాలతో సమానమని నిర్ధారించలేదు.",
+    ]
+else:
+    recipe["measurement_assumptions"].extend([
+        "Assumptions used: 1 cup = 240 ml, 1 tablespoon = 15 ml, and 1 teaspoon = 5 ml.",
+        "The cook's own cup and spoon sizes have not been confirmed to match these standards.",
+    ])
 
 # Apply simple unit conversions deterministically so the model cannot return
 # inconsistent arithmetic for common measures.
@@ -133,7 +163,7 @@ def count_in(text):
             return number
     return None
 
-for item in recipe["ingredients"]:
+for item in recipe["ingredients"] if args.language_code == "te-IN" else []:
     name = item["ingredient"]
     amount = item["original_amount"]
     count = count_in(amount)
@@ -191,6 +221,86 @@ for item in recipe["ingredients"]:
             item["estimated_min_grams"] = None
             item["estimated_max_grams"] = None
             item["conversion_reason"] = "మూల ట్రాన్స్క్రిప్ట్‌లో ఈ పదార్థానికి మోతాదు స్పష్టంగా గుర్తించబడలేదు."
+
+if args.language_code == "te-IN":
+    # Keep the existing Telugu-specific unit handling and present confidence labels in Telugu.
+    for item in recipe["ingredients"]:
+        for field in ("quantity_confidence", "conversion_confidence"):
+            item[field] = {"high": "ఎక్కువ", "medium": "మధ్యస్థం", "low": "తక్కువ"}.get(item[field], item[field])
+else:
+    # Translate generated text to the selected recipe language. The source transcript
+    # and quoted amount phrases stay untouched so the family can audit what was said.
+    for item in recipe["ingredients"]:
+        for field in ("quantity_confidence", "conversion_confidence"):
+            item[field] = {"ఎక్కువ": "high", "మధ్యస్థం": "medium", "తక్కువ": "low"}.get(item[field], item[field])
+
+    if args.language_code == "en-IN":
+        print(json.dumps(recipe, ensure_ascii=False, indent=2))
+        raise SystemExit(0)
+
+    fields = []
+
+    def collect(node, path=()):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, str) and key not in {"spoken_transcript", "original_amount"}:
+                    fields.append((path + (key,), value))
+                else:
+                    collect(value, path + (key,))
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                if isinstance(value, str):
+                    fields.append((path + (index,), value))
+                else:
+                    collect(value, path + (index,))
+
+    def assign(path, value):
+        parent = recipe
+        for part in path[:-1]:
+            parent = parent[part]
+        parent[path[-1]] = value
+
+    def translate_group(group):
+        response = client.text.translate(
+            input="\n".join(value for _, value in group),
+            source_language_code="en-IN",
+            target_language_code=args.language_code,
+            model="sarvam-translate:v1",
+        )
+        translated = response.translated_text.splitlines()
+        if len(translated) != len(group):
+            if len(group) == 1:
+                translated = [response.translated_text]
+            else:
+                for path, value in group:
+                    single = client.text.translate(
+                        input=value,
+                        source_language_code="en-IN",
+                        target_language_code=args.language_code,
+                        model="sarvam-translate:v1",
+                    ).translated_text
+                    assign(path, single.strip())
+                return
+        for (path, _), value in zip(group, translated):
+            assign(path, value.strip())
+
+    collect(recipe)
+    group, size = [], 0
+    for entry in fields:
+        path, value = entry
+        if len(value) > 1900:
+            if group:
+                translate_group(group)
+                group, size = [], 0
+            translate_group([entry])
+        elif group and size + len(value) + 1 > 1900:
+            translate_group(group)
+            group, size = [entry], len(value) + 1
+        else:
+            group.append(entry)
+            size += len(value) + 1
+    if group:
+        translate_group(group)
 
 print(json.dumps(recipe, ensure_ascii=False, indent=2))
 

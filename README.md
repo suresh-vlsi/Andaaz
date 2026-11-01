@@ -1,6 +1,6 @@
 # Andaaz — family recipes, remembered
 
-Andaaz helps families preserve recipes shared by feel. It can turn spoken Telugu cooking instructions into a structured recipe, read a handwritten recipe card, and keep saved recipes in the visitor's browser.
+Andaaz helps families preserve recipes shared by feel. It can turn spoken Indic-language cooking instructions into a structured recipe, read a handwritten recipe card, and keep saved recipes in the visitor's browser.
 
 ## Live website
 
@@ -11,14 +11,14 @@ The public interface is hosted on GitHub Pages. The Sarvam-powered features requ
 ## What this project includes
 
 - Audio recording or upload for spoken recipes.
-- Telugu speech transcription with Sarvam Speech to Text (`saaras:v4`).
-- Recipe structuring with Sarvam Chat Completions (`sarvam-105b-conversations`), including original measures, estimated gram ranges, confidence notes, and cooking steps.
-- Handwritten recipe-card reading with Sarvam Document AI.
+- Speech transcription in 22 Indian languages plus English with Sarvam Speech to Text (`saaras:v4`).
+- Recipe structuring with Sarvam Chat Completions (`sarvam-105b-conversations`), including original measures, estimated gram ranges, confidence notes, and cooking steps. For languages outside the chat model's direct coverage, Andaaz translates the transcript to English for structuring and translates recipe text back to the selected language.
+- Handwritten recipe-card reading in 22 Indian languages plus English with Sarvam Document AI.
 - A language selector for the interface, translated with Sarvam Text Translate (`sarvam-translate:v1`) into supported Indic languages.
 - Recipe review, editing, download, and a browser-local recipe archive.
 - A static GitHub Pages frontend and a Python API backend deployment configuration for Render.
 
-The UI language selector translates the interface. Recipe transcription and recipe output are currently Telugu-first. Saved recipes remain in the current browser and are not uploaded to a family cloud archive.
+The interface language and recipe language can be selected independently. Speech recognition, handwritten card reading, and recipe output support 22 Indian languages plus English. Review translations and measurement estimates before cooking. Saved recipes remain in the current browser and are not uploaded to a family cloud archive.
 
 ## Run locally
 
