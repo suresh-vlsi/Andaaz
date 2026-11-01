@@ -7,16 +7,18 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / "work" / "python_packages"))
 
-# Load the project's .env without adding another dependency.
-for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-    name, separator, value = line.partition("=")
-    if separator and name.strip() == "SARVAM_API_KEY":
-        os.environ.setdefault("SARVAM_API_KEY", value.strip().strip("\"'"))
-        break
+# Load a local .env when present; hosted services provide the key as an environment variable.
+env_file = ROOT / ".env"
+if env_file.exists():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        if separator and name.strip() == "SARVAM_API_KEY":
+            os.environ.setdefault("SARVAM_API_KEY", value.strip().strip("\"'"))
+            break
 
 api_key = os.environ.get("SARVAM_API_KEY")
 if not api_key:
-    raise SystemExit("Add your Sarvam API key to .env as SARVAM_API_KEY=your_key")
+    raise SystemExit("Set SARVAM_API_KEY in the environment or add it to .env")
 
 from sarvamai import SarvamAI
 
