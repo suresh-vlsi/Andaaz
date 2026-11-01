@@ -110,6 +110,34 @@ if text.startswith("Document\n"):
 if not text:
     raise SystemExit("కార్డు నుంచి చదవగలిగే వచనం రాలేదు.")
 
+# Document AI returns OCR text. For Telugu cards, use the chat model only to
+# proofread obvious OCR mistakes while preserving all quantities and order.
+if args.language_code == "te-IN":
+    response = client.chat.completions(
+        model="sarvam-105b-conversations",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "మీరు తెలుగు వంటకార్డుల OCR పాఠ్యాన్ని సరిచేసే సంపాదకులు. "
+                    "ఇది కొత్త వంటకం అడిగిన అభ్యర్థన కాదు. సహజమైన, సరైన తెలుగు లిపిలోనే రాయండి. "
+                    "సందర్భంతో నిశ్చయంగా గుర్తించగల OCR అక్షర దోషాలనే సరిచేయండి. "
+                    "పదార్థాలు, మోతాదులు, సంఖ్యలు, భిన్నాలు, కొలతలు, క్రమం ఏవీ మార్చకండి లేదా మార్చి రాయకండి. "
+                    "కొత్త పదార్థాలు, మోతాదులు, వడ్డింపుల సంఖ్య, దశలు కల్పించకండి. "
+                    "చదవలేని పదం లేదా మోతాదును ఊహించకుండా [అస్పష్టం] అని గుర్తించండి. "
+                    "మూలంలో ఉన్న సమాచారాన్నే శుభ్రంగా అమర్చి ఇవ్వండి; అదనపు వివరణ వద్దు."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"కార్డులో OCR గుర్తించిన మూల పాఠ్యం:\n\n{text}",
+            },
+        ],
+    )
+    corrected = response.choices[0].message.content
+    if corrected and corrected.strip():
+        text = corrected.strip()
+
 output_file = args.card.with_name(f"{args.card.stem}.recipe.txt")
 output_file.write_text(text + "\n", encoding="utf-8")
 print(text)
