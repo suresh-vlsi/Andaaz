@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: andaaz-api-suresh-vlsi
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python andaaz_web.py
+    envVars:
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: ANDAAZ_ALLOWED_ORIGIN
+        value: https://suresh-vlsi.github.io
